@@ -138,7 +138,10 @@ def create_conv(iDic,input_layer,iName,prev_dic,stddev_n = 0.1,norm_offset=0,nor
     if prev_dic['type']=='CV':
         iDic['input_depth']=prev_dic['depth']
     elif prev_dic['type']=='input_layer':
-        iDic['input_depth']=1
+        if 'prev_channels' in iDic.keys():
+            iDic['input_depth']=iDic['prev_channels']
+        else:
+            iDic['input_depth']=1
     if iDic['type']=='CV':
         iDic['W'] = tf.Variable(tf.truncated_normal([iDic['filter_w'], iDic['filter_w'], iDic['input_depth'], iDic['depth']], stddev=stddev_n),name=W_name)
         iDic['b'] = tf.Variable(tf.constant(stddev_n, shape=[iDic['depth']]),name=b_name)

@@ -14,6 +14,7 @@ With this library **cnn_modeling.py** you can create "n" layers of convolutional
 * Enable/Disable dropout for the Fully connected layers. (Keep_ prob is set to one during the test time)
 * Adam optimizer used.
 * An additional function to transform a numpy array with shape **m** by **n+1** to a mini-batch list of the desired size with balanced clases. But, **Important constrain:** for binary classification only. (This constrain is only for this last additional function).
+* Worked for grayscale images. If you want to test if with 3 colors or more channels images see the notes at the end of this page.
 
 ### Future improvements:
 * Exponential weighted average for batch mean/std for the testing time.
@@ -620,3 +621,4 @@ with tf.Session() as s:
 * You can enable max pooling by setting **max_pooling=True**, but you need to specify the hyperparameters shown. For the moment there is no default values 
 * Every layer requires a unique name. During the saving and restoring of the model I saw some issues when variables lack a name. 
 * The **create_graph** function requires that the train and test batches be a list of **"bn"** mini-batches where the mini-batch[0] is for x and [1] for y. x should be of shape **mini-batch size** by **n features** and y **mini-batch size** by **nc classes**
+* The layers were tested with grayscale images. if the input batches have 3 channels (r,g,b) or others add to the first **CV** dictionary the key **'prev_channels':3**  and see what happens. By default it is set to **1** . I haven't tested for more channels so if you do it and works let me know.
