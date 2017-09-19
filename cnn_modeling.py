@@ -2,123 +2,33 @@ import tensorflow as tf
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-
-def create_graph(train_batch,layers,test_batch=None,width=256,height=256,
-                 batch_proc=True, test_batch_bool=False,
-                 restore_session = False, save_model = False, only_feed_forward=False,
-                 stddev_n = 0.1, learning_rate = 1e-4,iters=4,model_file='CNN_model'):
-    _x_batch = train_batch[0][0]
-    _y_batch = train_batch[0][1]
-    class_output = _y_batch.shape[1]
-    
-    tf.reset_default_graph()
-
-    x_flat = width * height
-    x = tf.placeholder(tf.float32, shape=[None, x_flat])
-    y_ = tf.placeholder(tf.float32, shape=[None, class_output])
-    x_image = tf.reshape(x, [-1,width,height,1])  
-
-    layers.insert(0,{'x_image':x_image,'output_label':'x_image','type':'input_layer'})
-
-    for i in range(1,len(layers)):
-        print("Creating layer:",layers[i]['name'])
-        create_conv(iDic=layers[i],input_layer=layers[i-1][layers[i-1]['output_label']],iName=layers[i]['name'],prev_dic=layers[i-1])
-
-    FCL_input=layers[-1][layers[-1]['output_label']]
-    FCL_input_features = get_previous_features(FCL_input)
-    W_FCL = tf.Variable(tf.truncated_normal([FCL_input_features, class_output], stddev=stddev_n))
-    b_FCL = tf.Variable(tf.constant(stddev_n, shape=[class_output])) 
-    FCL=tf.matmul(FCL_input, W_FCL) + b_FCL
-    y_CNN = tf.nn.softmax(FCL)
-
-    cross_entropy = tf.reduce_mean(-tf.reduce_sum(y_ * tf.log(y_CNN), reduction_indices=[1]))
-
-    train_step = tf.train.AdamOptimizer(learning_rate).minimize(cross_entropy)
-    correct_prediction = tf.equal(tf.argmax(y_CNN,1), tf.argmax(y_,1))
-    accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
-
-    init_op = tf.global_variables_initializer()
-    
-    ###########
-    with tf.Session() as s:
-        print("Starting session")
-        s.run(tf.global_variables_initializer())
-        saver = tf.train.Saver()
-        if restore_session==True:
-            #tf.reset_default_graph()
-            saver.restore(s,tf.train.latest_checkpoint('./'))
-        for _ in range(1,len(layers)):
-            _layer = layers[_]
-            _name = _layer['name']
-            _label = _layer['output_label']
-            _data_show = _layer[_label]
-            if _label == 'dropout':
-                r=s.run(_data_show,feed_dict={x:_x_batch,_layer['keep_prob']:_layer['keep_prob_train']})
-            else:
-                r=s.run(_data_show,feed_dict={x:_x_batch})
-            print(_name,_label,r.shape)    
-        dic_to_feed = {x:_x_batch,y_:_y_batch,_layer['keep_prob']:1}
-        _,cross,acc=s.run([train_step,cross_entropy,accuracy],feed_dict=dic_to_feed)
-        print("First batch test ","Loss:",cross,"Accuracy:",acc)
-
-        return_dic = {}
-        if only_feed_forward == False:
-            train_total_acc = []
-            train_total_cross = []
-            for itern in range(0,iters):
-                if batch_proc == False:
-                    dic_to_feed = {x:_x_batch,y_:_y_batch,_layer['keep_prob']:_layer['keep_prob_train']}
-                    _,cross,acc=s.run([train_step,cross_entropy,accuracy],feed_dict=dic_to_feed)
-                    print("iter:",itern,"Loss:",cross,"Accuracy:",acc)
-                else:
-                    train_batch_acc = []
-                    train_batch_cross = []
-                    for bn,batch_n in enumerate(train_batch):
-                        x_batch,y_batch=batch_n[0],batch_n[1]
-                        dic_to_feed = {x:x_batch,y_:y_batch,_layer['keep_prob']:_layer['keep_prob_train']}
-                        _,cross,acc=s.run([train_step,cross_entropy,accuracy],feed_dict=dic_to_feed)
-                        print("iter:",itern,"batch:",bn,"Loss:",cross,"Accuracy:",acc)
-                        train_batch_acc.append(acc)
-                        train_batch_cross.append(cross)
-                        train_total_acc.append(acc)
-                        train_total_cross.append(cross)
-                    np_train_batch_acc = np.asarray(train_batch_acc)
-                    print("Train batch mean",np_train_batch_acc.mean(),"min:",np_train_batch_acc.min(),"max",np_train_batch_acc.max())
-            np_train_acc = np.asarray(train_total_acc[len(train_batch)*(iters-1):])
-            print("Train last iter mean",np_train_acc.mean(),"min:",np_train_acc.min(),"max",np_train_acc.max())
-            if save_model ==True:
-                print("Saving model in:",model_file)
-                saving_model = saver.save(s, model_file)
-            return_dic['train_acc']=train_total_acc.copy()
-            return_dic['train_cross']=train_total_cross.copy()
+def create_graph_bools(train_batch,layers,test_batch,mode='train',first_run=True,stddev_n = 0.1, learning_rate = 1e-4,iters=1,model_file='test_model',batch_proc=True, width=256,height=256):
+    if mode == 'train':
+        test_batch_bool=False
+        only_feed_forward=False
+        if first_run == True:
+            restore_session = False
         else:
-            if batch_proc == False:
-                dic_to_feed = {x:_x_batch,y_:_y_batch,_layer['keep_prob']:_layer['keep_prob_train']}
-                _,cross,acc=s.run([train_step,cross_entropy,accuracy],feed_dict=dic_to_feed)
-                print("Loss:",cross,"Accuracy:",acc)
-            else:
-                if test_batch_bool == True:
-                    feed_batch = test_batch
-                    print("Evaluating using test batch")
-                else:
-                    feed_batch = train_batch
-                    print("Evaluating using train batch")
-                total_accuracy = []
-                total_loss = []
-                for bn,batch_n in enumerate(feed_batch):
-                    x_batch,y_batch=batch_n[0],batch_n[1]
-                    dic_to_feed = {x:x_batch,y_:y_batch,_layer['keep_prob']:1}
-                    _,cross,acc=s.run([train_step,cross_entropy,accuracy],feed_dict=dic_to_feed)
-                    total_accuracy.append(acc)
-                    total_loss.append(cross)
-                    print("batch:",bn,"Loss:",cross,"Accuracy:",acc)
-                np_acc = np.asarray(total_accuracy)
-                print("Accuracy mean:",np_acc.mean(),"max:",np_acc.max(),"min:",np_acc.min())
-                return_dic['test_acc']=total_accuracy.copy()
-                return_dic['test_cross']=total_loss.copy()
-    print("Done")
-    return return_dic.copy()
-    ###########
+            restore_session = True
+        save_model = True
+    elif mode == 'test':
+        test_batch_bool=True
+        only_feed_forward=True
+        restore_session = True
+        save_model = False
+    elif mode == 'evaluate':
+        test_batch_bool=False
+        only_feed_forward=True
+        restore_session = False
+        save_model = False
+
+    create_graph_return = create_graph(train_batch,layers=layers,test_batch=test_batch,
+                width=width,height=height, test_batch_bool=test_batch_bool,only_feed_forward=only_feed_forward,
+                restore_session = restore_session, save_model = save_model, stddev_n = stddev_n, 
+                learning_rate = learning_rate,iters=iters,model_file=model_file)
+    return create_graph_return.copy()
+
+
 
 def get_previous_features(i_layer):
     convx_dims = i_layer.get_shape().as_list()
@@ -246,3 +156,137 @@ def plot_list(iList,figsize=(10,8),title="Loss/Eff",xlabel="Iters",ylabel="Loss/
     plt.ylabel(ylabel)
     plt.title(title)
     plt.show()
+##############
+def create_graph(train_batch,layers,test_batch=None,width=256,height=256,
+                 batch_proc=True, test_batch_bool=False,
+                 restore_session = False, save_model = False, only_feed_forward=False,
+                 stddev_n = 0.1, learning_rate = 1e-4,iters=4,model_file='CNN_model'):
+    _x_batch = train_batch[0][0]
+    _y_batch = train_batch[0][1]
+    class_output = _y_batch.shape[1]
+    
+    tf.reset_default_graph()
+
+    x_flat = width * height
+    x = tf.placeholder(tf.float32, shape=[None, x_flat])
+    y_ = tf.placeholder(tf.float32, shape=[None, class_output])
+    x_image = tf.reshape(x, [-1,width,height,1])  
+
+    layers.insert(0,{'x_image':x_image,'output_label':'x_image','type':'input_layer'})
+
+    for i in range(1,len(layers)):
+        print("Creating layer:",layers[i]['name'])
+        create_conv(iDic=layers[i],input_layer=layers[i-1][layers[i-1]['output_label']],iName=layers[i]['name'],prev_dic=layers[i-1])
+
+    FCL_input=layers[-1][layers[-1]['output_label']]
+    FCL_input_features = get_previous_features(FCL_input)
+    W_FCL = tf.Variable(tf.truncated_normal([FCL_input_features, class_output], stddev=stddev_n))
+    b_FCL = tf.Variable(tf.constant(stddev_n, shape=[class_output])) 
+    FCL=tf.matmul(FCL_input, W_FCL) + b_FCL
+    y_CNN = tf.nn.softmax(FCL)
+
+    cross_entropy = tf.reduce_mean(-tf.reduce_sum(y_ * tf.log(y_CNN), reduction_indices=[1]))
+
+    train_step = tf.train.AdamOptimizer(learning_rate).minimize(cross_entropy)
+    correct_prediction = tf.equal(tf.argmax(y_CNN,1), tf.argmax(y_,1))
+    accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+
+    init_op = tf.global_variables_initializer()
+    
+    ###########
+    with tf.Session() as s:
+        print("Starting session")
+        test_keep_prob = 1.0
+        s.run(tf.global_variables_initializer())
+        saver = tf.train.Saver()
+        if restore_session==True:
+            #tf.reset_default_graph()
+            saver.restore(s,tf.train.latest_checkpoint('./'))
+        dic_to_feed = {x:_x_batch,y_:_y_batch}
+        for _layer in layers:
+            if 'drop_out_bool' in _layer.keys():
+                if _layer['drop_out_bool'] == True:
+                    dic_to_feed[_layer['keep_prob']]=test_keep_prob        
+        for _ in range(1,len(layers)):
+            _layer = layers[_]
+            _name = _layer['name']
+            _label = _layer['output_label']
+            _data_show = _layer[_label]
+            r=s.run(_data_show,feed_dict=dic_to_feed)
+            print(_name,_label,r.shape)
+        _,cross,acc=s.run([train_step,cross_entropy,accuracy],feed_dict=dic_to_feed)
+        print("First batch evaluation using the training set, batch 0 ","Loss:",cross,"Accuracy:",acc)
+
+        return_dic = {}
+        if only_feed_forward == False:
+            train_total_acc = []
+            train_total_cross = []
+            dic_to_feed = {x:_x_batch,y_:_y_batch}#,_layer['keep_prob']:1}
+            for _layer in layers:
+                if 'drop_out_bool' in _layer.keys():
+                    if _layer['drop_out_bool'] == True:
+                        dic_to_feed[_layer['keep_prob']]=_layer['keep_prob_train']
+                        #dic_to_feed[_layer['keep_prob']]=1.0
+            for itern in range(0,iters):
+                if batch_proc == False:
+                    #dic_to_feed = {x:_x_batch,y_:_y_batch,_layer['keep_prob']:_layer['keep_prob_train']}
+                    _,cross,acc=s.run([train_step,cross_entropy,accuracy],feed_dict=dic_to_feed)
+                    print("iter:",itern,"Loss:",cross,"Accuracy:",acc)
+                else:
+                    train_batch_acc = []
+                    train_batch_cross = []
+                    for bn,batch_n in enumerate(train_batch):
+                        x_batch,y_batch=batch_n[0],batch_n[1]
+                        dic_to_feed[x]=x_batch
+                        dic_to_feed[y_]=y_batch
+                        _,cross,acc=s.run([train_step,cross_entropy,accuracy],feed_dict=dic_to_feed)
+                        print("iter:",itern,"batch:",bn,"Loss:",cross,"Accuracy:",acc)
+                        train_batch_acc.append(acc)
+                        train_batch_cross.append(cross)
+                        train_total_acc.append(acc)
+                        train_total_cross.append(cross)
+                    np_train_batch_acc = np.asarray(train_batch_acc)
+                    print("Train batch mean",np_train_batch_acc.mean(),"min:",np_train_batch_acc.min(),"max",np_train_batch_acc.max())
+            np_train_acc = np.asarray(train_total_acc[len(train_batch)*(iters-1):])
+            print("Train last iter mean",np_train_acc.mean(),"min:",np_train_acc.min(),"max",np_train_acc.max())
+            if save_model ==True:
+                print("Saving model in:",model_file)
+                saving_model = saver.save(s, model_file)
+            return_dic['train_acc']=train_total_acc.copy()
+            return_dic['train_cross']=train_total_cross.copy()
+        else:
+            for _layer in layers:
+                if 'drop_out_bool' in _layer.keys():
+                    if _layer['drop_out_bool'] == True:
+                        dic_to_feed[_layer['keep_prob']]=_layer['keep_prob_train']
+            if batch_proc == False:
+                dic_to_feed[x]=_x_batch
+                dic_to_feed[y_]=_y_batch
+                #dic_to_feed = {x:_x_batch,y_:_y_batch,_layer['keep_prob']:_layer['keep_prob_train']}
+                _,cross,acc=s.run([train_step,cross_entropy,accuracy],feed_dict=dic_to_feed)
+                print("Loss:",cross,"Accuracy:",acc)
+            else:
+                if test_batch_bool == True:
+                    feed_batch = test_batch
+                    print("Evaluating using test batch")
+                else:
+                    feed_batch = train_batch
+                    print("Evaluating using train batch")
+                total_accuracy = []
+                total_loss = []
+                for bn,batch_n in enumerate(feed_batch):
+                    x_batch,y_batch=batch_n[0],batch_n[1]
+                    dic_to_feed[x]=x_batch
+                    dic_to_feed[y_]=y_batch
+                    #dic_to_feed = {x:x_batch,y_:y_batch,_layer['keep_prob']:1}
+                    _,cross,acc=s.run([train_step,cross_entropy,accuracy],feed_dict=dic_to_feed)
+                    total_accuracy.append(acc)
+                    total_loss.append(cross)
+                    print("batch:",bn,"Loss:",cross,"Accuracy:",acc)
+                np_acc = np.asarray(total_accuracy)
+                print("Test Accuracy mean:",np_acc.mean(),"max:",np_acc.max(),"min:",np_acc.min())
+                return_dic['test_acc']=total_accuracy.copy()
+                return_dic['test_cross']=total_loss.copy()
+    print("Done")
+    return return_dic.copy()
+
