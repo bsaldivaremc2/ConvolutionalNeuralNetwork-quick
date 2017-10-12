@@ -14,7 +14,12 @@ With this library **cnn_modeling.py** you can create "n" layers of convolutional
 * Enable/Disable dropout for the Fully connected layers. (Keep_ prob is set to one during the test time)
 * Adam optimizer used.
 * An additional function to transform a numpy array with shape **m** by **n+1** to a mini-batch list of the desired size with balanced clases. But, **Important constrain:** for binary classification only. (This constrain is only for this last additional function).
-* Worked for grayscale images. If you want to test if with 3 colors or more channels images see the notes at the end of this page.
+* Worked for grayscale images. If you want to test if with 3 colors or more channels images see the notes at the end of this page.  
+* Create Deep Neural Networks without convolution layers by selecting a desired mode.  
+* Update the learning rate based on the performance of the trained model in the dev-set: There is an option to automate the training-testing processes. After a desired amount of iterations, period **T**, the model is tested in the testing-batch. The amount of False Positives (**fp**) and False Negatives (**fn**) are acquired at this **T0**. At **T1** the **fp1** and **tn1** are compared with **fn0** and **fp0**. If **fp1**-**fp0** > an **allowed fp increase (AFpI)**  or **fn1**-**fn0**>**fn (AFnI)** the learning rate is decreased by a factor of 10. If a minimum learning rate is reached the learning process stops.   
+* Automate the training-testing process, for **n** desired iterations and decrease the learning-rate as previously described.
+* For the automated training-testing set up receive an e-mail when the learning process ends. It supports gmail accounts so far.
+
 
 ### Future improvements:
 * Exponential weighted average for batch mean/std for the testing time.
@@ -614,8 +619,159 @@ with tf.Session() as s:
     
       [[-0.08060057  0.12104277  0.14032906 ..., -0.10620737 -0.13509519
         -0.12730974]]]]
+  
+  
+
+## Simpler training-testing 
+
+The option has two possibilities:  
+* **train**: Uses the **batch_train** for training and will compute the learning_step process (E.g. Gradient descent). When the option **first_run** is set to **True**, no model is loaded. At the end of the iterations the model will be saved in the **model_file** variable. If **first_run** is set to **False**, the **model_file** model will be loaded for the next specified iterations.  
+* **test**: Uses the **batch_test** for an only forward process. It will load the **model_file** specified.  
 
 
+
+```python
+d1,d2 = 32,32
+
+CV1 ={'type':'CV',  'depth':d1, 'filter_w':3, 'filter_stride':[1,1,1,1], 'norm_bool':True,
+      'name':'CV1' } 
+CV2 ={'type':'CV',  'depth':d2, 'filter_w':3, 'filter_stride':[1,1,1,1], 'norm_bool':True,
+      'max_pooling':True, 'max_pool_mask':[1,2,2,1], 'max_pool_stride':[1,2,2,1], 'padding':'SAME',
+      'name':'CV2' }
+
+CV2FC={'type':'CV2FC', 'neurons':128, 'norm_bool':True, 'name':'CV2FC',
+      'drop_out_bool':True, 'keep_prob_train':0.5} 
+
+layers = [CV1,CV2,CV2FC]
+
+mode = 'train'
+first_run = True
+iters = 1
+model_file = 'cnn_model_01'
+batch_train = group1_batch
+batch_test = group2_batch
+iMode='CNN'
+
+st = time()
+stats_dic = cnn_modeling.create_graph_bools(batch_train,layers,batch_test,mode=mode,
+            first_run=first_run, model_file=model_file,
+            stddev_n = 0.1, learning_rate = 0.001,iters=iters,
+            batch_proc=True, width=256,height=256,input_mode=iMode)
+print("Minutes taken", np.ceil((time() - st)/60))
+
+```
+
+## Create a Deep Neural Network without Convolutional layers
+
+Change the **input_mode** from **CNN** to **DNN** 
+
+
+```python
+FC1 = { 'type':'FC', 'neurons':1024, 'norm_bool':True, 'name':'FC1',
+      'drop_out_bool':True, 'keep_prob_train':1,
+      'x2_bool':False,'x2_features':256} 
+FC2 = { 'type':'FC', 'neurons':1024, 'norm_bool':True, 'name':'FC2',
+       'drop_out_bool':True, 'keep_prob_train':0.5} 
+layers = [FC1,FC2]
+
+mode = 'train'
+first_run = True
+iters = 1
+model_file = 'dnn_model_01'
+batch_train = group1_batch
+batch_test = group2_batch
+iMode='DNN'
+
+st = time()
+stats_dic = cnn_modeling.create_graph_bools(batch_train,layers,batch_test,mode=mode,
+            first_run=first_run, model_file=model_file,
+            stddev_n = 0.1, learning_rate = 0.001,iters=iters,
+            batch_proc=True, width=256,height=256,input_mode=iMode)
+print("Minutes taken", np.ceil((time() - st)/60))
+```
+
+## Automate traing-testing with decreasing learning-rate
+
+Update the learning rate based on the performance of the trained model in the dev-set: There is an option to automate the training-testing processes. After a desired amount of iterations, period **T**, the model is tested in the testing-batch. The amount of False Positives (**fp**) and False Negatives (**fn**) are acquired at this **T0**. At **T1** the **fp1** and **tn1** are compared with **fn0** and **fp0**. If **fp1**-**fp0** > an **allowed fp increase (AFpI)**  or **fn1**-**fn0**>**fn (AFnI)** the learning rate is decreased by a factor of 10. If a minimum learning rate is reached the learning process stops.  
+
+Create a dictionary for the **auto_test** variable. Enable this mode by setting **bool** to true.  
+* **test_interval** defines the period **T** to evaluate how well the model is performing on the dev/test set.  
+*  **stop_max** if set to **True**, the learning process will stop when the number of iterations reach the **max_iters** value or if the **train_rate_stop** is reached. If set to **False** it only will stop when **train_rate_stop** is reached.  
+* **fp_inc** and **fn_inc** is the **Allowed Increase** for **fp** and **fn** respectively. If this values are overpassed, the learning rate will decrease by a factor of 10 and the last **fp** and **fn** taken in this update will be consired as the base for further evaluations.  
+* **train_rate_stop** is the minimun value that the learning-rate could decrease.  
+* **send_email_bool** if set to **True** the system will send an e-mail with the account **emain_origin** and passoword **email_pass** to **email_destination**.  
+
+
+```python
+d1,d2 = 32,32
+
+CV1 ={'type':'CV',  'depth':d1, 'filter_w':3, 'filter_stride':[1,1,1,1], 'norm_bool':True,
+      'name':'CV1' } 
+CV2 ={'type':'CV',  'depth':d2, 'filter_w':3, 'filter_stride':[1,1,1,1], 'norm_bool':True,
+      'max_pooling':True, 'max_pool_mask':[1,2,2,1], 'max_pool_stride':[1,2,2,1], 'padding':'SAME',
+      'name':'CV2' }
+
+CV2FC={'type':'CV2FC', 'neurons':128, 'norm_bool':True, 'name':'CV2FC',
+      'drop_out_bool':True, 'keep_prob_train':0.5} 
+
+layers = [CV1,CV2,CV2FC]
+
+mode = 'train'
+first_run = True
+iters = 1
+model_file = 'cnn_model_01'
+batch_train = group1_batch
+batch_test = group2_batch
+iMode='CNN'
+
+auto_test={'bool':True,'test_interval':6,'stop_max':False,
+           'max_iters':8,'fp_inc':2,'fn_inc':2,'train_rate_stop':0.00000001,
+           'restore_session':False,
+          'send_email_bool':True,'email_origin':'origin.email@gmail.com',
+           'email_pass':'your.email.password',
+           'email_destination':'destination.email@gmail.com'}
+
+st = time()
+stats_dic = cnn_modeling.create_graph_bools(batch_train,layers,batch_test,mode=mode,
+            first_run=first_run, model_file=model_file,
+            stddev_n = 0.1, learning_rate = 0.001,iters=iters,
+            batch_proc=True, width=256,height=256,input_mode=iMode,
+            auto_test=auto_test)
+print("Minutes taken", np.ceil((time() - st)/60))
+
+```
+
+The email will have the structure:  
+**Subject**: Model evaluation completed: **hostname of the server/computer** Max-iter **max_iter value**   
+**Content**:  
+stats:  
+ {'tn': 2147, 'specificity': 0.8439465375631031, 'fp': 397, 'fn': 545, 'sensitivity': 0.785770437162852, 'tp': 1999} | learning rate: 0.0001  
+{'tn': 2150, 'specificity': 0.8451257828414867, 'fp': 394, 'fn': 532, 'sensitivity': 0.790880500035847, 'tp': 2012} | learning rate: 0.0001  
+...   
+{'tn': 2166, 'specificity': 0.8514150909928652, 'fp': 378, 'fn': 492, 'sensitivity': 0.8066037704142933, 'tp': 2052} | learning rate: 1.0000000000000002e-08  
+...  
+{'tn': 2167, 'specificity': 0.8518081727523263, 'fp': 377, 'fn': 493, 'sensitivity': 0.8062106886548321, 'tp': 2051} | learning rate: 1.0000000000000002e-08  
+{'tn': 2167, 'specificity': 0.8518081727523263, 'fp': 377, 'fn': 494, 'sensitivity': 0.805817606895371, 'tp': 2050} | learning rate: 1.0000000000000003e-09  
+
+#### Enable the gmail security for low security applications before having the email send working
+
+Before using the email send feature, test the following lines:  
+  
+import smtplib  
+server = smtplib.SMTP('smtp.gmail.com:587')  
+server.starttls()  
+**Next, log in to the server** 
+server.login("your.email@gmail.com", "your.password.")  
+  
+**Send a test email**  
+msg = "Subject:test \n\n Hello! \n test context\n" # The \n\n separates the message from the headers  
+server.sendmail("your.email@gmail.com", "destination.email@gmail.com", msg)  
+
+
+You are expected to see an error message after its excecution. Check your gmail inbox and you will get a **security warning**. Read the description, click on **enable access for less secure applications** and follow the instructions. Once done, try the previous lines again and if you don't get any error, your account is ready to be used. (I don't use my main email account for this).
+
+
+  
 ### Important indications:
 * As may have seen there is a structure Convolutional Layer **(CV)**, CV2FC and Fully Connected **(FC)**. For the moment it is required to have this structure and have a translation layer from the CV layers to the FC. This CV2FC is a FC layer with a reshape step in the first part.
 * You can enable max pooling by setting **max_pooling=True**, but you need to specify the hyperparameters shown. For the moment there is no default values 
