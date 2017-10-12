@@ -769,9 +769,28 @@ server.sendmail("your.email@gmail.com", "destination.email@gmail.com", msg)
 
 
 You are expected to see an error message after its excecution. Check your gmail inbox and you will get a **security warning**. Read the description, click on **enable access for less secure applications** and follow the instructions. Once done, try the previous lines again and if you don't get any error, your account is ready to be used. (I don't use my main email account for this).
-
-
   
+## Miscellaneuos features:  
+### Feed a histogram of the input layer (image) in parallel with the convolutional layers  
+
+![png](20171012-115122.png)
+
+You can feed a histogram of the input layer to a Fully Connected Layer by setting the option **x2_bool** to **True** and defining the number of bins for the histogram. **x2_features=256** will feed a histogram of 256 bins  
+
+```python  
+
+CV2FC={'type':'CV2FC', 'neurons':128, 'norm_bool':True, 'name':'CV2FC',
+      'drop_out_bool':True, 'keep_prob_train':0.5} 
+FC1 = { 'type':'FC', 'neurons':1024, 'norm_bool':True, 'name':'FC1',
+      'drop_out_bool':True, 'keep_prob_train':1,
+      'x2_bool':False,'x2_features':256} 
+FC2 = { 'type':'FC', 'neurons':1024, 'norm_bool':True, 'name':'FC2',
+       'drop_out_bool':True, 'keep_prob_train':0.5} 
+
+layers = [CV1,CV2,CV2FC,FC1,FC2]
+
+```
+    
 ### Important indications:
 * As may have seen there is a structure Convolutional Layer **(CV)**, CV2FC and Fully Connected **(FC)**. For the moment it is required to have this structure and have a translation layer from the CV layers to the FC. This CV2FC is a FC layer with a reshape step in the first part.
 * You can enable max pooling by setting **max_pooling=True**, but you need to specify the hyperparameters shown. For the moment there is no default values 
