@@ -18,8 +18,11 @@ With this library **cnn_modeling.py** you can create "n" layers of convolutional
 * Create Deep Neural Networks without convolution layers by selecting a desired mode.  
 * Update the learning rate based on the performance of the trained model in the dev-set: There is an option to automate the training-testing processes. After a desired amount of iterations, period **T**, the model is tested in the testing-batch. The amount of False Positives (**fp**) and False Negatives (**fn**) are acquired at this **T0**. At **T1** the **fp1** and **tn1** are compared with **fn0** and **fp0**. If **fp1**-**fp0** > an **allowed fp increase (AFpI)**  or **fn1**-**fn0**>**fn (AFnI)** the learning rate is decreased by a factor of 10. If a minimum learning rate is reached the learning process stops.   
 * Automate the training-testing process, for **n** desired iterations and decrease the learning-rate as previously described.
-* For the automated training-testing set up receive an e-mail when the learning process ends. It supports gmail accounts so far.
-
+* For the automated training-testing set up receive an e-mail when the learning process ends. It supports gmail accounts so far.  
+**Miscellaneous**:  
+* Feed to the Fully connected layers a histogram of the input layer in parallel with the convolutional layers.  
+* Reduce noise in a pre-processing step.  
+* Visualize the image result of the convolutions or max-pooling
 
 ### Future improvements:
 * Exponential weighted average for batch mean/std for the testing time.
@@ -790,7 +793,52 @@ FC2 = { 'type':'FC', 'neurons':1024, 'norm_bool':True, 'name':'FC2',
 layers = [CV1,CV2,CV2FC,FC1,FC2]
 
 ```
-    
+### Pre-processing: Explicity convolution for border detection  
+I have Included a previous step prior to the convolutional layers. A manual convolution of the images against 4 filters. After the convolutions with these filters the result is added and normalized to remark every possible border in these directions  
+```python  
+F1 = tf.constant([[1.0,0,-1.0],[1.0,0,-1.0],[1.0,0,-1.0]])
+F2 = tf.transpose(F1)
+F3 = tf.constant([[1.0,0,1.0],[0,0,0],[-1.0,0,-1.0]])
+F4 = tf.transpose(F3)
+
+CVM = CV1+CV2+CV3+CV4
+CVMn = 255.0*CVM/(tf.reduce_max(CVM)-tf.reduce_min(CVM))
+
+```  
+
+Then, this result goes against an upper-pass filter to transform upper values of a threshold to 255 and those below to zero. The functions is described in: https://github.com/bsaldivaremc2/image_classification_synthetic_rotated_sample_creator  
+
+To activate this feature add to the **cnn_modeling.create_graph_bools** function the variables:  
+* **reduce_noise**: To **True**  
+* **rn_shift**: is the threshold value between 0 and 1. a value of 0.5 means that values above 127 will be set to 255 and below to 0.   
+* **rn_magnitude**: from 0 to 1, is the factor that will transform the value of each pixel, if set closer to 1 a transformation towards 255 for values over the threshold will be set. Lower values will provide lighter transformations.
+
+```python  
+cnn_modeling.create_graph_bools(...,reduce_noise=False,rn_shift=0.03,rn_magnitude=0.8,...)  
+
+```
+  
+### Visualize the result of a given Convolution Layer against an input mini-batch set of images  
+If you want to see how it looks like the image after the convolution of a given layer, including the max-pooling layer set the option **get_deconv**=**True** . Also specify which layer you want to see in the variable **deconv_layer='CV4'**. Since every layer has a **norm**, **relu**, **conv**, **max** operations, you need to specify which of these you want to be returned. To see the convolution layers result set **deconv_val = 'conv'** or to see the max pooling if enabled **deconv_val = 'max'**.  
+Use this in a **test** mode.  
+The function will return a key **stats_dic['deconv']** which holds the result.  
+```python  
+
+stats_dic = cnn_modeling.create_graph_bools(batch_train,layers,batch_test,mode=test,...
+            get_deconv=False,deconv_layer='CV4',deconv_val = 'max')  
+
+r = stats_dic['deconv']
+image_to_see = 20 #Number of image in the mini-batch
+
+print(r.shape)
+for filterx in range(0,2): #See the first two filters
+    deconv = r[image_to_see,:,:,filterx]
+    deconv_t = np.reshape(deconv,(r.shape[1],r.shape[2]))
+    plt.imshow(deconv_t,cmap="gray")
+    plt.show()
+            
+```  
+
 ### Important indications:
 * As may have seen there is a structure Convolutional Layer **(CV)**, CV2FC and Fully Connected **(FC)**. For the moment it is required to have this structure and have a translation layer from the CV layers to the FC. This CV2FC is a FC layer with a reshape step in the first part.
 * You can enable max pooling by setting **max_pooling=True**, but you need to specify the hyperparameters shown. For the moment there is no default values 
