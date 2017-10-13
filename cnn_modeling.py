@@ -4,8 +4,10 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import smtplib
 import socket
+from time import time
 def create_graph_bools(train_batch,layers,test_batch,mode='train',first_run=True,
-	stddev_n = 0.1, learning_rate = 1e-4,iters=1,model_file='test_model',batch_proc=True, 
+	stddev_n = 0.1, learning_rate = 1e-4,iters=1,min_train_loss=1e-8,
+    model_file='test_model',batch_proc=True, 
 	width=256,height=256,input_mode='CNN',
 	reduce_noise=False,rn_shift=0.15,rn_magnitude=0.8,
     get_deconv=False,deconv_layer='CV2',deconv_val = 'conv',
@@ -36,7 +38,7 @@ def create_graph_bools(train_batch,layers,test_batch,mode='train',first_run=True
         create_graph_return = create_graph(train_batch,layers=layers,test_batch=test_batch,
                 width=width,height=height, test_batch_bool=test_batch_bool,only_feed_forward=only_feed_forward,
                 restore_session = restore_session, save_model = save_model, stddev_n = stddev_n, 
-                learning_rate = learning_rate,iters=iters,model_file=model_file,input_mode=input_mode,
+                learning_rate = learning_rate,iters=iters,min_train_loss=min_train_loss,model_file=model_file,input_mode=input_mode,
                 reduce_noise=reduce_noise,rn_shift=rn_shift,rn_magnitude=rn_magnitude,
                 get_deconv=get_deconv,deconv_layer=deconv_layer,deconv_val = deconv_val)
     else:
@@ -67,7 +69,7 @@ def create_graph_bools(train_batch,layers,test_batch,mode='train',first_run=True
                 create_graph_return = create_graph(train_batch,layers=train_layers,test_batch=test_batch,
                     width=width,height=height, test_batch_bool=test_batch_bool,only_feed_forward=only_feed_forward,
                     restore_session = restore_session, save_model = save_model, stddev_n = stddev_n, 
-                    learning_rate = learning_rate_down,iters=iters,model_file=model_file,input_mode=input_mode,
+                    learning_rate = learning_rate_down,iters=iters,min_train_loss=min_train_loss,model_file=model_file,input_mode=input_mode,
                     reduce_noise=reduce_noise,rn_shift=rn_shift,rn_magnitude=rn_magnitude,
                     get_deconv=get_deconv,deconv_layer=deconv_layer,deconv_val = deconv_val)
             #{'tp':tpo,'tn':tno,'fp':fpo,'fn':tno,'sensitivity':o_sensitivity,'specificity':o_specificity}
@@ -82,7 +84,7 @@ def create_graph_bools(train_batch,layers,test_batch,mode='train',first_run=True
                 create_graph_return_test = create_graph(train_batch,layers=test_layers,test_batch=test_batch,
                     width=width,height=height, test_batch_bool=test_batch_bool,only_feed_forward=only_feed_forward,
                     restore_session = restore_session, save_model = save_model, stddev_n = stddev_n, 
-                    learning_rate = learning_rate_down,iters=iters,model_file=model_file,input_mode=input_mode,
+                    learning_rate = learning_rate_down,iters=iters,min_train_loss=min_train_loss,model_file=model_file,input_mode=input_mode,
                     reduce_noise=reduce_noise,rn_shift=rn_shift,rn_magnitude=rn_magnitude,
                     get_deconv=get_deconv,deconv_layer=deconv_layer,deconv_val = deconv_val)
                 fpx_test = create_graph_return_test['stats']['fp']
@@ -100,7 +102,7 @@ def create_graph_bools(train_batch,layers,test_batch,mode='train',first_run=True
                         print("New learning_rate:",learning_rate_down)
                         fpx_base=fpx_test
                         fnx_base=fnx_test   
-                return [learning_rate_down,fpx_base,fnx_base,create_graph_return_test['stats'].copy()]
+                return [learning_rate_down,fpx_base,fnx_base,create_graph_return_test['stats'].copy(),create_graph_return_test['training_message']]
             
         def loop_stat(list_stat,lr):
             st=""
@@ -112,11 +114,16 @@ def create_graph_bools(train_batch,layers,test_batch,mode='train',first_run=True
         err_message=""
         giter=0
         fpx_base,fnx_base=0,0
+        st = time()
         if auto_test['stop_max']==True:
             for giter in range(giter,train_interval):
                 print("Global iter:",giter,"/",train_interval)
                 print(learning_rate_down,auto_test['train_rate_stop'])
-                learning_rate_down,fpx_base,fnx_base,stats = auto_test_module(learning_rate_down,fpx_base,fnx_base,giter=giter,restore=auto_test['restore_session'])
+                learning_rate_down,fpx_base,fnx_base,stats,train_msg = auto_test_module(learning_rate_down,fpx_base,fnx_base,giter=giter,restore=auto_test['restore_session'])
+                if train_msg=='min_train_loss':
+                    print("End by training loss")
+                    err_message="End by training loss"
+                    break;
                 if learning_rate_down < auto_test['train_rate_stop']:
                     print("End by learning rate")
                     break;
@@ -130,15 +137,20 @@ def create_graph_bools(train_batch,layers,test_batch,mode='train',first_run=True
             while (learning_rate_down>auto_test['train_rate_stop']):
                 print("Global iter:",giter)
                 print(learning_rate_down,auto_test['train_rate_stop'])
-                learning_rate_down,fpx_base,fnx_base,stats = auto_test_module(learning_rate_down,fpx_base,fnx_base,giter=giter,restore=auto_test['restore_session'])
+                learning_rate_down,fpx_base,fnx_base,stats,train_msg = auto_test_module(learning_rate_down,fpx_base,fnx_base,giter=giter,restore=auto_test['restore_session'])
                 test_stats.append(stats)
                 learning_rate_list.append(learning_rate_down)
                 giter+=1
+                if train_msg=='min_train_loss':
+                    print("End by training loss")
+                    err_message="End by training loss"
+                    break;
                 if (stats['tp']==0) and (stats['fp']==0):
                     print("Error")
                     err_message="Loss: nan found"
                     break;
         email_keys = ['send_email_bool','email_origin','email_pass','email_destination']
+        time_taken = np.ceil((time() - st)/60)
         if bool(list(filter(lambda x: x in list(auto_test.keys()),email_keys))):
             if auto_test['send_email_bool']==True:
                 content="stats:\n "+loop_stat(test_stats,learning_rate_list)+" \n "+err_message+"\n"
@@ -146,7 +158,9 @@ def create_graph_bools(train_batch,layers,test_batch,mode='train',first_run=True
                 email_org = auto_test['email_origin']
                 email_pass = auto_test['email_pass']
                 email_dest = auto_test['email_destination']
-                email_subj = "Model "+model_file+" evaluation completed: "+socket.gethostname()+" Max-iter "+str(auto_test['stop_max'])
+                email_subj = "Model "+model_file+" evaluation completed: "
+                email_subj += socket.gethostname()+" Max-iter "+str(auto_test['stop_max'])
+                email_subj += "iters: "+str(giter)+ " Minutes taken: "+str(time_taken)
                 send_mail(email_org,email_dest,email_pass,subject=email_subj,content=content)
         create_graph_return={'stats':10}
     return create_graph_return.copy()
@@ -302,7 +316,8 @@ def plot_list(iList,figsize=(10,8),title="Loss/Eff",xlabel="Iters",ylabel="Loss/
 def create_graph(train_batch,layers,test_batch=None,width=256,height=256,
                  batch_proc=True, test_batch_bool=False,
                  restore_session = False, save_model = False, only_feed_forward=False,
-                 stddev_n = 0.1, learning_rate = 1e-4,iters=4,model_file='CNN_model',
+                 stddev_n = 0.1, learning_rate = 1e-4,iters=4,min_train_loss=1e-8,
+                 model_file='CNN_model',
                  input_mode='CNN',wf=0.8,ws=0.3,batch_size=8,
                  reduce_noise=False,rn_shift=0.15,rn_magnitude=0.8,
                  get_deconv=True,deconv_layer='CV2',deconv_val = 'conv'):
@@ -414,6 +429,7 @@ def create_graph(train_batch,layers,test_batch=None,width=256,height=256,
 
     init_op = tf.global_variables_initializer()
     
+    
     ###########
     with tf.Session() as s:
         print("Starting session")
@@ -443,7 +459,7 @@ def create_graph(train_batch,layers,test_batch=None,width=256,height=256,
         _,cross,acc=s.run([train_step,cross_entropy,accuracy],feed_dict=dic_to_feed)
         print("First batch evaluation using the training set, batch 0 ","Loss:",cross,"Accuracy:",acc)
 
-        return_dic = {}
+        return_dic = {'training_message':None}
         if only_feed_forward == False:
             train_total_acc = []
             train_total_cross = []
@@ -478,10 +494,20 @@ def create_graph(train_batch,layers,test_batch=None,width=256,height=256,
                         train_batch_cross.append(cross)
                         train_total_acc.append(acc)
                         train_total_cross.append(cross)
-                    np_train_batch_acc = np.asarray(train_batch_acc)
-                    print("Train batch mean",np_train_batch_acc.mean(),"min:",np_train_batch_acc.min(),"max",np_train_batch_acc.max())
-            np_train_acc = np.asarray(train_total_acc[len(train_batch)*(iters-1):])
-            print("Train last iter mean",np_train_acc.mean(),"min:",np_train_acc.min(),"max",np_train_acc.max())
+                        #if cross<min_train_loss:
+                        if str(cross) == "nan":
+                            break;
+                    if  str(cross) != "nan":
+                        np_train_batch_acc = np.asarray(train_batch_acc)
+                        print("Train batch mean",np_train_batch_acc.mean(),"min:",np_train_batch_acc.min(),"max",np_train_batch_acc.max())
+                #if cross<min_train_loss:
+                if str(cross) == "nan":
+                    print("Stopped by learning convergence. Loss=nan")
+                    return_dic['training_message']="min_train_loss"
+                    break;
+            if  str(cross) != "nan":
+                np_train_acc = np.asarray(train_total_acc[len(train_batch)*(iters-1):])
+                print("Train last iter mean",np_train_acc.mean(),"min:",np_train_acc.min(),"max",np_train_acc.max())
             if save_model ==True:
                 print("Saving model in:",model_file)
                 saving_model = saver.save(s, model_file)
